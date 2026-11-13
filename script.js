@@ -62,7 +62,8 @@ document.querySelectorAll(".nav-link").forEach(link => link.addEventListener("cl
   menuToggle.setAttribute("aria-expanded", "false");
 }));
 
-document.getElementById("year").textContent = new Date().getFullYear();
+const yearEl = document.getElementById("year");
+if (yearEl) yearEl.textContent = new Date().getFullYear();
 
 // Apps Script accepts the form payload, saves it to Google Sheets, and emails the site owner.
 const contactForm = document.getElementById("contact-form");
