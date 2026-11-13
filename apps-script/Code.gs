@@ -1,74 +1,92 @@
 /**
- * Charles Perez Portfolio — Google Apps Script contact endpoint
- * 1) Create a Google Sheet (or let this script create one on first use).
- * 2) Paste this file into Extensions > Apps Script.
- * 3) Deploy > New deployment > Web app.
- *    Execute as: Me
- *    Who has access: Anyone
- * 4) Copy the Web app URL into APPS_SCRIPT_URL in script.js.
- *
- * The script saves each inquiry in a spreadsheet and emails the owner.
+ * Portfolio contact form handler.
+ * Emails each inquiry to TO_EMAIL and logs it in a Google Sheet.
  */
-const OWNER_EMAIL = "charles.perez1984@gmail.com";
-const SHEET_NAME = "Portfolio Inquiries";
+const TO_EMAIL = "charles.perez1984@gmail.com";
+const SHEET_TITLE = "Charles Perez — Portfolio Inquiries";
+const TAB_NAME = "Portfolio Inquiries";
 
 function doPost(e) {
   try {
-    const data = JSON.parse((e && e.postData && e.postData.contents) || "{}");
-    if (!data.name || !data.email || !data.service || !data.message) {
-      return jsonOutput({ ok: false, message: "Please complete all required fields." });
-    }
-    if (String(data.name).length > 100 || String(data.email).length > 160 ||
-        String(data.message).length > 5000) {
-      return jsonOutput({ ok: false, message: "Submitted content is too long." });
+    const raw = (e && e.postData && e.postData.contents) || "";
+    let data;
+    try { data = JSON.parse(raw); } catch (_) { data = (e && e.parameter) || {}; }
+
+    const name = clean(data.name, 100);
+    const email = clean(data.email, 160);
+    const service = clean(data.service, 100);
+    const message = clean(data.message, 5000);
+
+    if (!name || !email || !message) return reply({ ok: false, error: "Missing required fields" });
+
+    // 1) Send the email first so a spreadsheet problem can never block it.
+    const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    const mail = {
+      to: TO_EMAIL,
+      subject: "New portfolio inquiry from " + name,
+      name: "AquarianArt Website",
+      body:
+        "You have a new inquiry from your portfolio website.\n\n" +
+        "Name: " + name + "\n" +
+        "Email: " + email + "\n" +
+        "Service: " + service + "\n\n" +
+        "Message:\n" + message + "\n"
+    };
+    if (validEmail) mail.replyTo = email;
+    MailApp.sendEmail(mail);
+
+    // 2) Log to Google Sheets (non-fatal if it fails).
+    try {
+      const sheet = getSheet_();
+      sheet.appendRow([new Date(), name, email, service, message]);
+    } catch (sheetErr) {
+      console.error("Sheet error: " + sheetErr);
     }
 
-    const sheet = getOrCreateSheet();
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(["Timestamp", "Name", "Email", "Service", "Message"]);
-      sheet.setFrozenRows(1);
-    }
-    const safe = value => String(value || "").replace(/[\r\n]+/g, " ").trim();
-    sheet.appendRow([new Date(), safe(data.name), safe(data.email), safe(data.service), String(data.message).trim()]);
-
-    const subject = "New portfolio inquiry — " + safe(data.service);
-    const body =
-      "You received a new message through your portfolio website.\n\n" +
-      "Name: " + safe(data.name) + "\n" +
-      "Email: " + safe(data.email) + "\n" +
-      "Service: " + safe(data.service) + "\n\n" +
-      "Project details:\n" + String(data.message).trim() + "\n\n" +
-      "Reply directly to: " + safe(data.email);
-    MailApp.sendEmail({
-      to: OWNER_EMAIL,
-      subject: subject,
-      body: body,
-      replyTo: safe(data.email)
-    });
-    return jsonOutput({ ok: true, message: "Inquiry received." });
+    return reply({ ok: true });
   } catch (err) {
     console.error(err);
-    return jsonOutput({ ok: false, message: "Unable to process inquiry." });
+    return reply({ ok: false, error: String(err) });
   }
 }
 
-function getOrCreateSheet() {
+// Visiting the /exec URL in a browser should show this message.
+function doGet() {
+  return reply({ ok: true, message: "Contact endpoint is running" });
+}
+
+function getSheet_() {
   const props = PropertiesService.getScriptProperties();
-  let id = props.getProperty("INQUIRY_SPREADSHEET_ID");
-  let spreadsheet;
+  let id = props.getProperty("SPREADSHEET_ID");
+  let ss;
   if (id) {
-    spreadsheet = SpreadsheetApp.openById(id);
+    ss = SpreadsheetApp.openById(id);
   } else {
-    spreadsheet = SpreadsheetApp.create("Charles Perez — Portfolio Inquiries");
-    props.setProperty("INQUIRY_SPREADSHEET_ID", spreadsheet.getId());
+    ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.create(SHEET_TITLE);
+    props.setProperty("SPREADSHEET_ID", ss.getId());
   }
-  let sheet = spreadsheet.getSheetByName(SHEET_NAME);
-  if (!sheet) sheet = spreadsheet.insertSheet(SHEET_NAME);
+  let sheet = ss.getSheetByName(TAB_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(TAB_NAME);
+    sheet.appendRow(["Timestamp", "Name", "Email", "Service", "Message"]);
+  }
   return sheet;
 }
 
-function jsonOutput(data) {
-  return ContentService
-    .createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
+function clean(v, max) {
+  return String(v == null ? "" : v).trim().slice(0, max || 500);
+}
+
+function reply(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Run this ONCE from the editor (select it in the function dropdown, press Run)
+ * to grant the email + spreadsheet permissions and send yourself a test email.
+ */
+function authorizeAndTest() {
+  MailApp.sendEmail(TO_EMAIL, "Contact form test", "If you got this, email sending works.");
+  getSheet_();
+  console.log("Authorized. Check your inbox.");
 }
