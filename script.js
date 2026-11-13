@@ -42,7 +42,7 @@ function showSlide(index) {
 function startCarousel() {
   clearInterval(carouselTimer);
   if (videoPlaying) return;
-  carouselTimer = setInterval(() => showSlide(activeSlide + 1), 5500);
+  carouselTimer = setInterval(() => showSlide(activeSlide + 1), 6000);
 }
 document.querySelector(".next").addEventListener("click", () => { showSlide(activeSlide + 1); startCarousel(); });
 document.querySelector(".prev").addEventListener("click", () => { showSlide(activeSlide - 1); startCarousel(); });
